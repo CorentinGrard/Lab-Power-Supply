@@ -16,7 +16,15 @@ I²C addresses: `0x40` INA238, `0x52` AP33772S.
 
 ## Build & flash
 
-Uses [PlatformIO](https://platformio.org/) (CLI: `pipx install platformio`, or the VS Code extension).
+Uses [PlatformIO](https://platformio.org/), installed in a project-local venv:
+
+```sh
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+source .venv/bin/activate
+```
+
+Then:
 
 ```sh
 pio run                  # build

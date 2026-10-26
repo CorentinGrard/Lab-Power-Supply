@@ -9,3 +9,6 @@
 .idea/
 *.swp
 .DS_Store
+
+# Python venv (PlatformIO)
+.venv/
