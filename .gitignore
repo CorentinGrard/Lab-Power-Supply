@@ -12,3 +12,6 @@
 
 # Python venv (PlatformIO)
 .venv/
+
+# Wi-Fi credentials
+include/secrets.h
