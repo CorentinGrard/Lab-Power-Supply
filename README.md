@@ -11,14 +11,22 @@ Wi-Fi or from the serial console.
 | D2 (GPIO4)  | SDA        |
 | D1 (GPIO5)  | SCL        |
 | GND         | GND        |
-| 3V3         | 3.3V In (only if the RotoPD isn't already powered by its charger) |
+| 5V          | 5V Out     |
+| 3V3         | 3.3V In    |
 
-Note the crossover in the names: **SCL → D1**, **SDA → D2**. 3.3 V logic only.
+The RotoPD is powered by the USB-C charger. Its **5V Out** powers the D1 mini, whose
+regulator then feeds 3.3 V back to the RotoPD's **3.3V In** (I²C logic level).
+
+- Note the crossover in the names: **SCL → D1**, **SDA → D2**. 3.3 V logic only.
+- Never connect the RotoPD's power output (up to 48 V) to the D1 mini.
+- Before plugging the D1 mini into USB (e.g. for flashing), remove the 5V wire so the
+  two 5 V sources aren't tied together. OTA avoids this.
 
 I²C addresses: `0x40` INA238, `0x52` AP33772S (`0x70` also answers, harmless).
 
-The firmware reads the charger's profiles only at boot: after powering or rewiring the
-RotoPD, press RST on the D1 mini.
+The firmware reads the charger's profiles at boot and keeps retrying every 2 s until it
+gets them (the RotoPD may still be negotiating when the D1 mini starts). Reload the web
+page once they're found. After changing chargers, press RST on the D1 mini.
 
 ## Setup
 

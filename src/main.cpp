@@ -89,6 +89,24 @@ void readPdos() {
   }
 }
 
+bool havePdos() {
+  for (int idx = 1; idx <= NUM_PDOS; idx++)
+    if (pdos[idx].type != PdoType::None) return true;
+  return false;
+}
+
+// When the D1 mini is powered by the RotoPD, both boot together and the charger's
+// profiles may not be ready at our first read: keep trying until they show up.
+void retryPdos() {
+  constexpr uint32_t RETRY_MS = 2000;
+  static uint32_t last = 0;
+  if (havePdos() || millis() - last < RETRY_MS) return;
+  last = millis();
+  usbpd.begin();
+  readPdos();
+  if (havePdos()) Serial.println("Charger profiles found");
+}
+
 int findPps() {
   for (int idx = 1; idx <= 7; idx++)
     if (pdos[idx].type == PdoType::PPS) return idx;
@@ -412,6 +430,7 @@ void setup() {
 
 void loop() {
   checkOverCurrent();
+  retryPdos();
   ArduinoOTA.handle();
   server.handleClient();
   MDNS.update();
