@@ -8,6 +8,8 @@ It's built from two cheap boards: a **Wemos D1 mini** (ESP8266, Wi-Fi) driving a
 **[CentyLab RotoPD Pro](https://hackaday.io/project/204943-rotopd-pro-usb-c-240w-breakout-i2c)**
 (USB-PD sink + power monitor).
 
+<img src="docs/screenshot.png" alt="The web page: live readings, chart, voltage controls, charger report, protection and counters" width="280" align="right">
+
 ## Features
 
 - **Any voltage** the charger allows: fine steps with PPS/AVS chargers, or its fixed profiles
@@ -260,3 +262,7 @@ A charger offering 5 / 9 / 12 / 15 V at 3 A, 20 V at 5 A and PPS 3.3–21 V at 3
 - [AP33772S Arduino library](https://github.com/CentyLab/AP33772S-CentyLab) by CentyLab
 - [INA238 library](https://github.com/RobTillaart/INA238) by Rob Tillaart
 - [RotoPD Pro](https://hackaday.io/project/204943-rotopd-pro-usb-c-240w-breakout-i2c) by CentyLab
+
+## License
+
+[MIT](LICENSE)
