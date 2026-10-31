@@ -25,8 +25,13 @@ regulator then feeds 3.3 V back to the RotoPD's **3.3V In** (I²C logic level).
 I²C addresses: `0x40` INA238, `0x52` AP33772S (`0x70` also answers, harmless).
 
 The firmware reads the charger's profiles at boot and keeps retrying every 2 s until it
-gets them (the RotoPD may still be negotiating when the D1 mini starts). Reload the web
-page once they're found. After changing chargers, press RST on the D1 mini.
+gets them (the RotoPD may still be negotiating when the D1 mini starts). It also notices
+when a different charger is plugged in: the output switches off and the profiles reload.
+The web page picks up new profiles by itself.
+
+Because 5V Out follows the charger voltage down, the D1 mini browns out and reboots below
+about 4.2 V. PPS/AVS requests are therefore kept at **4.5 V or more**
+(`MIN_SUPPLY_MV` in `src/main.cpp`; set it to 0 if the D1 mini is powered from USB instead).
 
 ## Setup
 
@@ -38,7 +43,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-Wi-Fi credentials go in `include/secrets.h` (git-ignored):
+Wi-Fi credentials, and optionally a web password, go in `include/secrets.h` (git-ignored):
 
 ```sh
 cp include/secrets.example.h include/secrets.h   # then edit it
@@ -73,17 +78,39 @@ automatically during an OTA update.
 
 http://labpsu.local (or the IP printed at boot / by the `wifi` command):
 
-- live voltage, current, power, board temperature
+- live voltage, current, power, board temperature, with the set voltage and the drop under load
 - output ON/OFF
-- PPS voltage and current limit (shown when the charger supports PPS)
+- chart of voltage and current: live 2 minutes, or 10 min / 1 h / the whole log (hover for values)
+- counters: on-time, mAh, Wh; output timer (off after N minutes and/or N mAh) and
+  end-of-charge cutoff (off once the current stays below N mA for N seconds)
+- PPS and AVS voltage + current (shown when the charger supports them)
 - one-tap fixed-voltage profiles
-- over-current cutoff setting and reset
+- charger & cable report: every profile with its power, max power, PPS/AVS/EPR support,
+  cable rating and measured cable resistance (see below)
+- protection: current, voltage and power cutoffs, soft start
+- measurement log, downloadable as CSV
 
-There is no login: anyone on the network can control the supply.
+Set `WEB_PASSWORD` in `secrets.h` to require a login (user `admin`, or `WEB_USER`).
+Without it, anyone on the network can control the supply.
 
-JSON API used by the page: `GET /api/status`, `GET /api/pdos`,
-`POST /api/set?mode=pps&mv=&ma=` or `?mode=fixed&idx=&ma=`, `POST /api/output?on=0|1`,
-`POST /api/ocp?ma=`, `POST /api/clear`.
+Settings (cutoffs, soft start, timer, log interval, last setpoint) are saved to
+flash 3 s after a change and restored at boot. The output always starts off.
+
+### JSON API
+
+| Request | Effect |
+|---------|--------|
+| `GET /api/status` | measurements, setpoint, settings, counters |
+| `GET /api/pdos` | charger profiles |
+| `GET /api/log.csv[?since=<uptime_s>]` | the log as CSV (only newer entries with `since`) |
+| `POST /api/set?mode=auto&mv=&ma=` | any voltage: picks PPS, then fixed, then AVS (`ma=0`: charger max) |
+| `POST /api/set?mode=pps\|avs&mv=&ma=` / `?mode=fixed&idx=&ma=` | a specific profile |
+| `POST /api/output?on=0\|1` | output switch |
+| `POST /api/protect?ocp_ma=&ovp_mv=&opp_mw=&ramp_ms=` | cutoffs and soft start (any subset; 0 = off, except `ocp_ma`) |
+| `POST /api/clear` | reset a tripped cutoff |
+| `POST /api/timer?off_s=&off_mah=&end_ma=&end_s=` | output timer, charge limit, end of charge (0 = off) |
+| `POST /api/counters/reset` | reset on-time / mAh / Wh |
+| `POST /api/log?interval_s=` | log interval (clears the log) |
 
 ## Serial commands
 
@@ -93,21 +120,61 @@ JSON API used by the page: `GET /api/status`, `GET /api/pdos`,
 | `wifi`           | network status and web address                      |
 | `scan`           | scan the I²C bus                                    |
 | `profile`        | list the charger's PDOs                             |
-| `stat`           | bus voltage, current, power, temperature, output state |
+| `stat`           | measurements, settings, counters, last event        |
 | `on` / `off`     | output switch                                       |
-| `fix <idx> <mA>` | request a fixed PDO                                 |
-| `pps <mV> <mA>`  | request a PPS voltage (PPS charger, up to 21 V)     |
-| `avs <mV> <mA>`  | request an AVS voltage (EPR charger + 5 A cable, up to 48 V) |
+| `set <mV> [mA]`  | any voltage: picks PPS, fixed or AVS                |
+| `fix <idx> [mA]` | request a fixed PDO                                 |
+| `pps <mV> [mA]`  | request a PPS voltage (PPS charger, up to 21 V)     |
+| `avs <mV> [mA]`  | request an AVS voltage (EPR charger + 5 A cable, up to 48 V) |
 | `ocp <mA>`       | over-current cutoff                                 |
-| `clear`          | reset a tripped over-current cutoff                 |
+| `ovp <mV>`       | over-voltage cutoff (0 = off)                       |
+| `opp <mW>`       | over-power cutoff (0 = off)                         |
+| `clear`          | reset a tripped cutoff                              |
+| `ramp <ms>`      | soft start duration (0 = off)                       |
+| `timer <s>`      | switch off after this much on-time (0 = off)        |
+| `mah <mAh>`      | switch off after this much charge (0 = off)         |
+| `endcharge <mA> [s]` | switch off below <mA> for [s] seconds (0 = off)  |
+| `pd`             | charger and cable report                            |
+| `zero`           | reset the counters                                  |
+| `log <s>`        | log interval (clears the log)                       |
+
+Omitting `[mA]` uses the charger's maximum.
+
+## Charger & cable report
+
+The board doubles as a basic USB PD tester: plug in a charger and the page (or `pd` on
+serial) lists what it offers.
+
+- **Profiles** come from the AP33772S, which stores up to 7 standard and 6 EPR profiles.
+  Currents are in 250 mA steps, as the chip reports them. The chip can't send arbitrary PD
+  messages, so manufacturer IDs and other extended details aren't available.
+- **Cable rating** is inferred: a charger only offers 5 A once it has read a 5 A e-marker in
+  the cable, and only offers EPR profiles over an EPR cable. With 3 A profiles only, the
+  limit could be the charger or the cable. The AP33772S is a sink and can't read the
+  e-marker itself.
+- **Cable resistance** is estimated from the voltage drop under load at the same setpoint:
+  the charger regulates at its own connector and the INA238 measures at our input. It needs
+  more than 0.3 A of load and includes the connectors. Chargers that compensate for cable
+  drop make it read low.
 
 ## Safety
 
 - Output is **off** at boot and during OTA updates.
-- PPS requests outside the charger's advertised range are rejected. The PPS current limit
-  (1 A minimum) is enforced by the charger.
-- **Over-current cutoff**: the firmware polls the INA238 every 20 ms and switches the output
-  off above the limit (default 5.1 A). It stays off until reset (`clear` or the web button).
+- PPS and AVS requests outside the charger's advertised range are rejected. The PPS current
+  limit (1 A minimum) is enforced by the charger; AVS and fixed profiles have none, so rely
+  on the current cutoff.
+- **Cutoffs** (current, default 5.1 A; voltage; power) work in hardware: the INA238 ALERT
+  pin drives a MOSFET that pulls the output switch's enable (SW_EN) low, so the output is cut
+  within a few ms of a single reading over the limit, without the ESP8266. The firmware also
+  checks the averaged readings every 20 ms as a backup, and reports either kind of trip. The
+  output stays off until reset (`clear` or the web button). Requests above the voltage
+  cutoff are refused. The voltage cutoff applies to the charger side (VBUS in).
+- **Soft start** (PPS/AVS only): the output switches on at the lowest allowed voltage and
+  steps up to the setpoint over the set time. Setpoint changes while on are ramped too.
+- **Timer / charge limit**: the output switches off when the on-time or mAh counter reaches
+  the limit, and won't switch back on until the counters are reset or the limit is raised.
+- **Log**: averages over the interval, 3000 entries kept in RAM (lost on reboot). Times are
+  seconds since boot, plus Unix time when the board is on Wi-Fi and has reached an NTP server.
 
 ## Tested with
 

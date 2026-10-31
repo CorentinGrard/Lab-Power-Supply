@@ -7,3 +7,6 @@
 
 // Password for over-the-air updates (leave empty to disable the check).
 #define OTA_PASSWORD  ""
+
+// Password for the web page and API (leave empty for no login). User name is "admin".
+#define WEB_PASSWORD  ""
